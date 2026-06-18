@@ -1,0 +1,3 @@
+-keep class com.yusuf.waantidelete.WaXposed { *; }
+-keep class com.yusuf.waantidelete.features.** { *; }
+-dontwarn de.robv.android.xposed.**
