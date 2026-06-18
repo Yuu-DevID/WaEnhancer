@@ -5,7 +5,6 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 
 import com.yusuf.waantidelete.features.AntiRevoke;
 import com.yusuf.waantidelete.features.ViewOnceUnlimited;
@@ -22,7 +21,6 @@ public class WaXposed implements IXposedHookLoadPackage {
     private static final String PACKAGE_WPP = "com.whatsapp";
     private static final String PACKAGE_BUSINESS = "com.whatsapp.w4b";
     private static final String PREFS_NAME = "waantidelete_status";
-    private static final String PREFS_FILE = "/data/data/com.yusuf.waantidelete/shared_prefs/" + PREFS_NAME + ".xml";
 
     private static SharedPreferences statusPrefs;
 
@@ -50,6 +48,7 @@ public class WaXposed implements IXposedHookLoadPackage {
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
         String packageName = lpparam.packageName;
         if (!packageName.equals(PACKAGE_WPP) && !packageName.equals(PACKAGE_BUSINESS)) return;
+        if (!lpparam.isFirstApplication) return;
 
         final ClassLoader loader = lpparam.classLoader;
         final String sourceDir = lpparam.appInfo.sourceDir;
@@ -75,11 +74,11 @@ public class WaXposed implements IXposedHookLoadPackage {
                             if (!Unobfuscator.init(sourceDir)) {
                                 writeError("DexKit init failed");
                                 writeStatus("connection", "error");
-                                XposedBridge.log("[WaAntiDelete] Failed to init DexKit");
+                                XposedBridge.log("[WaAntiDelete] Failed to init DexKit from: " + sourceDir);
                                 return;
                             }
                             writeStatus("dexkit", "ok");
-                            XposedBridge.log("[WaAntiDelete] DexKit initialized");
+                            XposedBridge.log("[WaAntiDelete] DexKit initialized from: " + sourceDir);
 
                             int hookedCount = 0;
                             int errorCount = 0;
@@ -110,13 +109,11 @@ public class WaXposed implements IXposedHookLoadPackage {
 
                             if (errorCount > 0) {
                                 writeStatus("connection", "partial");
-                                writeStatus("hooked_count", String.valueOf(hookedCount));
-                                writeStatus("error_count", String.valueOf(errorCount));
                             } else {
                                 writeStatus("connection", "ok");
-                                writeStatus("hooked_count", String.valueOf(hookedCount));
-                                writeStatus("error_count", "0");
                             }
+                            writeStatus("hooked_count", String.valueOf(hookedCount));
+                            writeStatus("error_count", String.valueOf(errorCount));
 
                             XposedBridge.log("[WaAntiDelete] Hooked: " + hookedCount + ", Errors: " + errorCount);
 

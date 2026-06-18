@@ -1,3 +1,11 @@
+-dontwarn *
+-dontobfuscate
+-dontoptimize
 -keep class com.yusuf.waantidelete.WaXposed { *; }
 -keep class com.yusuf.waantidelete.features.** { *; }
+-keep class com.yusuf.waantidelete.hook.** { *; }
+-keep class com.yusuf.waantidelete.MainActivity { *; }
+-keep class com.yusuf.waantidelete.R { *; }
+-keep class com.yusuf.waantidelete.R$* { *; }
 -dontwarn de.robv.android.xposed.**
+-dontwarn org.luckypray.dexkit.**

@@ -3,5 +3,6 @@
     <string-array name="xposed_scope">
         <item>com.whatsapp</item>
         <item>com.whatsapp.w4b</item>
+        <item>android</item>
     </string-array>
 </resources>

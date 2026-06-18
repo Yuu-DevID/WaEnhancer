@@ -75,9 +75,9 @@ public class AntiRevoke {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
                     try {
-                        if (param.args.length < 2) return;
+                        if (param.args.length < 1) return;
 
-                        Object fStatusKey = param.args[1];
+                        Object fStatusKey = param.args[0];
                         if (fStatusKey == null) return;
 
                         boolean isFromMe = XposedHelpers.getBooleanField(fStatusKey, "A03");
