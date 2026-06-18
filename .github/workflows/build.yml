@@ -1,0 +1,41 @@
+name: Build WaAntiDelete
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - wa-anti-delete
+
+jobs:
+  build:
+    permissions: write-all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: wa-anti-delete
+          submodules: recursive
+
+      - name: set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+          cache-dependency-path: |
+            **/*.gradle*
+            **/gradle-wrapper.properties
+            gradle/libs.versions.toml
+            **/gradle.properties
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release
+        run: ./gradlew assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: WaAntiDelete
+          path: app/build/outputs/apk/release/*.apk
