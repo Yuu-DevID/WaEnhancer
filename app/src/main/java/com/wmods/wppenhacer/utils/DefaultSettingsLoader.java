@@ -2,6 +2,7 @@ package com.wmods.wppenhacer.utils;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import androidx.preference.PreferenceManager;
 
@@ -11,10 +12,13 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 
 public class DefaultSettingsLoader {
 
     private static final String DEFAULT_SETTINGS_FILE = "default_settings.json";
+    private static final String TAG = "DefaultSettingsLoader";
 
     public static void applyDefaults(Context context) {
         try {
@@ -24,12 +28,12 @@ public class DefaultSettingsLoader {
             JSONObject settings = new JSONObject(json);
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
             SharedPreferences.Editor editor = prefs.edit();
-            boolean modified = false;
 
+            Set<String> jsonKeys = new HashSet<>();
             java.util.Iterator<String> keys = settings.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
-                if (prefs.contains(key)) continue;
+                jsonKeys.add(key);
 
                 JSONObject entry = settings.getJSONObject(key);
                 String type = entry.getString("type");
@@ -52,14 +56,19 @@ public class DefaultSettingsLoader {
                         editor.putLong(key, ((Number) value).longValue());
                         break;
                 }
-                modified = true;
             }
 
-            if (modified) {
-                editor.apply();
+            for (String key : prefs.getAll().keySet()) {
+                if (!jsonKeys.contains(key) && prefs.getAll().get(key) instanceof Boolean) {
+                    editor.putBoolean(key, false);
+                }
             }
+
+            editor.apply();
+            Log.i(TAG, "Applied " + jsonKeys.size() + " default settings, disabled " +
+                    (prefs.getAll().size() - jsonKeys.size()) + " non-JSON boolean keys");
         } catch (JSONException | IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Failed to apply defaults", e);
         }
     }
 
