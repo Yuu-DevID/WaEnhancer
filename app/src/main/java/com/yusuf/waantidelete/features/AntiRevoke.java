@@ -51,7 +51,7 @@ public class AntiRevoke {
 
                         if (!isFromMe && messageId != null && !messageId.isEmpty()) {
                             revokedMessages.add(messageId);
-                            param.setResult(param.method.getReturnType() == boolean.class ? true : 0);
+                            param.setResult(true);
                             XposedBridge.log("[WaAntiDelete] Blocked message revoke: " + messageId);
                         }
                     } catch (Throwable e) {
