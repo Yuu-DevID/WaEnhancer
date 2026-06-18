@@ -26,7 +26,9 @@ object Unobfuscator {
     @JvmStatic
     fun loadFMessageClass(classLoader: ClassLoader): Class<*> {
         val result = bridge.findClass {
-            addUsingString("FMessage/getSenderUserJid/key.id")
+            matcher {
+                addUsingString("FMessage/getSenderUserJid/key.id")
+            }
         }
         if (result.isEmpty()) throw RuntimeException("FMessage class not found")
         return result[0].getInstance(classLoader)
