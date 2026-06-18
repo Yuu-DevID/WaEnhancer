@@ -5,13 +5,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import com.yusuf.waantidelete.R;
 import com.yusuf.waantidelete.hook.ReflectionUtils;
 import com.yusuf.waantidelete.hook.Unobfuscator;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -27,7 +25,6 @@ public class AntiRevoke {
     private static Field keyField;
     private static Field keyMessageIdField;
     private static Field keyIsFromMeField;
-    private static Field keyRemoteJidField;
 
     public AntiRevoke(ClassLoader loader) {
         this.loader = loader;
@@ -42,8 +39,6 @@ public class AntiRevoke {
                     f.getType() == String.class);
             keyIsFromMeField = ReflectionUtils.findField(keyClass, f ->
                     f.getType() == boolean.class);
-            keyRemoteJidField = ReflectionUtils.findField(keyClass, f ->
-                    !f.getType().isPrimitive() && f.getType() != String.class);
 
             hookAntiRevokeMessage();
             hookAntiRevokeStatus();
@@ -121,23 +116,6 @@ public class AntiRevoke {
 
     private void hookConversationRow() {
         try {
-            Class<?> conversationRowClass = null;
-            String[] candidates = {
-                "com.whatsapp.ConversationRow",
-                "com.whatsapp.conversation.ConversationRow"
-            };
-            for (String name : candidates) {
-                try {
-                    conversationRowClass = loader.loadClass(name);
-                    break;
-                } catch (ClassNotFoundException ignored) {}
-            }
-
-            if (conversationRowClass == null) {
-                XposedBridge.log("[WaAntiDelete] ConversationRow class not found, trying alternative");
-                return;
-            }
-
             XposedHelpers.findAndHookMethod(
                 android.widget.AdapterView.class,
                 "setAdapter",
@@ -157,7 +135,7 @@ public class AntiRevoke {
                                     @Override
                                     protected void afterHookedMethod(MethodHookParam param) {
                                         try {
-                                            View convertView = param.args[1];
+                                            View convertView = (View) param.args[1];
                                             if (convertView == null) return;
 
                                             TextView dateView = convertView.findViewById(
