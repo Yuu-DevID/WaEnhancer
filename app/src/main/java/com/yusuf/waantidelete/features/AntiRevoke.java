@@ -96,7 +96,7 @@ public class AntiRevoke {
             XposedBridge.log("[WaAntiDelete] AntiRevokeStatus hook SUCCESS");
         } catch (Throwable e) {
             XposedBridge.log("[WaAntiDelete] AntiRevokeStatus hook FAILED: " + e.getMessage());
-            throw new RuntimeException("AntiRevokeStatus hook failed", e);
+            XposedBridge.log("[WaAntiDelete] AntiRevokeStatus will be skipped (anti-revoke message still works)");
         }
     }
 
