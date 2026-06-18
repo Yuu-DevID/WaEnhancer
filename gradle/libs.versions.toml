@@ -2,9 +2,11 @@
 agp = "8.13.2"
 kotlin = "2.2.21"
 xposed-legacy = "82"
+flatbuffers = "23.5.26"
 
 [libraries]
 libxposed-legacy = { group = "de.robv.android.xposed", name = "api", version.ref = "xposed-legacy" }
+flatbuffers = { module = "com.google.flatbuffers:flatbuffers-java", version.ref = "flatbuffers" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

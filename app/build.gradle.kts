@@ -54,4 +54,5 @@ kotlin {
 dependencies {
     compileOnly(libs.libxposed.legacy)
     implementation(files("libs/dexkit-android.aar"))
+    implementation(libs.flatbuffers)
 }
