@@ -24,6 +24,8 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.wmods.wppenhacer.utils.DefaultSettingsLoader;
+
 import rikka.material.app.LocaleDelegate;
 
 public class App extends Application {
@@ -56,6 +58,7 @@ public class App extends Application {
         super.onCreate();
         instance = this;
         installCrashHandler();
+        DefaultSettingsLoader.applyDefaults(this);
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         var mode = Integer.parseInt(sharedPreferences.getString("thememode", "0"));
         setThemeMode(mode);

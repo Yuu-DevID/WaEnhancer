@@ -1,0 +1,142 @@
+{
+    "force_restore_backup_feature": {
+        "type": "Boolean",
+        "value": false
+    },
+    "seentick": {
+        "type": "String",
+        "value": "0"
+    },
+    "bypass_version_check": {
+        "type": "Boolean",
+        "value": false
+    },
+    "antidisappearing": {
+        "type": "Boolean",
+        "value": true
+    },
+    "showbiohome": {
+        "type": "Boolean",
+        "value": true
+    },
+    "transcription_provider": {
+        "type": "String",
+        "value": "assemblyai"
+    },
+    "typearchive": {
+        "type": "String",
+        "value": "0"
+    },
+    "pinnedlimit": {
+        "type": "Boolean",
+        "value": true
+    },
+    "copystatus": {
+        "type": "Boolean",
+        "value": true
+    },
+    "enablelogs": {
+        "type": "Boolean",
+        "value": false
+    },
+    "doubletap2like_emoji": {
+        "type": "String",
+        "value": "👍"
+    },
+    "open_wae": {
+        "type": "Boolean",
+        "value": false
+    },
+    "doubletap2like": {
+        "type": "Boolean",
+        "value": true
+    },
+    "hidestatusview": {
+        "type": "Boolean",
+        "value": true
+    },
+    "audio_type": {
+        "type": "String",
+        "value": "0"
+    },
+    "restartbutton": {
+        "type": "Boolean",
+        "value": false
+    },
+    "ghostmode": {
+        "type": "Boolean",
+        "value": false
+    },
+    "buttonaction": {
+        "type": "Boolean",
+        "value": false
+    },
+    "update_check": {
+        "type": "Boolean",
+        "value": true
+    },
+    "antirevoke": {
+        "type": "String",
+        "value": "2"
+    },
+    "call_recording_toast": {
+        "type": "Boolean",
+        "value": false
+    },
+    "text_in_hour": {
+        "type": "String",
+        "value": "[TIME]"
+    },
+    "google_translate": {
+        "type": "Boolean",
+        "value": true
+    },
+    "disable_expiration": {
+        "type": "Boolean",
+        "value": false
+    },
+    "wae_color_mode": {
+        "type": "String",
+        "value": "preset"
+    },
+    "chatfilter": {
+        "type": "String",
+        "value": "2"
+    },
+    "custom_privacy_type": {
+        "type": "String",
+        "value": "0"
+    },
+    "media_preview": {
+        "type": "Boolean",
+        "value": true
+    },
+    "disable_ads": {
+        "type": "Boolean",
+        "value": true
+    },
+    "segundos": {
+        "type": "Boolean",
+        "value": true
+    },
+    "newchat": {
+        "type": "Boolean",
+        "value": false
+    },
+    "shownamehome": {
+        "type": "Boolean",
+        "value": true
+    },
+    "antirevokestatus": {
+        "type": "String",
+        "value": "2"
+    },
+    "show_freezeLastSeen": {
+        "type": "Boolean",
+        "value": false
+    },
+    "wae_color_preset": {
+        "type": "String",
+        "value": "green"
+    }
+}
