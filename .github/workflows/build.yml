@@ -33,9 +33,9 @@ jobs:
           KEY_STORE: ${{ secrets.KEY_STORE }}
         run: |
           if [ ! -z "$KEY_STORE" ]; then
-          echo androidStorePassword='${{ secrets.KEY_STORE_PASSWORD }}' >> gradle.properties
-          echo androidKeyAlias='${{ secrets.ALIAS }}' >> gradle.properties
-          echo androidKeyPassword='${{ secrets.KEY_PASSWORD }}' >> gradle.properties
+          echo androidStorePassword='android' >> gradle.properties
+          echo androidKeyAlias='waantidelete' >> gradle.properties
+          echo androidKeyPassword='android' >> gradle.properties
           echo androidStoreFile='key.jks' >> gradle.properties
           echo "$KEY_STORE" | base64 --decode > key.jks
           fi
