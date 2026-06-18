@@ -3,14 +3,25 @@
 
     <application
         android:label="WaAntiDelete"
-        android:icon="@android:drawable/ic_dialog_alert">
+        android:icon="@android:drawable/ic_dialog_alert"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <meta-data
             android:name="xposedmodule"
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Anti Delete Messages, Anti Delete Status, View Once Unlimited" />
+            android:value="Anti Delete Messages &amp; Status, View Once Unlimited. Open app to check status." />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />

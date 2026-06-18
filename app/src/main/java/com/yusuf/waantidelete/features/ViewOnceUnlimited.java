@@ -16,10 +16,12 @@ public class ViewOnceUnlimited {
     }
 
     public void hook() {
-        try {
-            Method[] methods = Unobfuscator.loadViewOnceMethods(loader);
+        Method[] methods = Unobfuscator.loadViewOnceMethods(loader);
+        XposedBridge.log("[WaAntiDelete] ViewOnce: found " + methods.length + " methods to hook");
 
-            for (Method method : methods) {
+        int hooked = 0;
+        for (Method method : methods) {
+            try {
                 XposedBridge.hookMethod(method, new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) {
@@ -28,7 +30,7 @@ public class ViewOnceUnlimited {
                                 int value = (Integer) param.args[0];
                                 if (value == 1) {
                                     param.args[0] = 0;
-                                    XposedBridge.log("[WaAntiDelete] ViewOnce unlimited: blocked view count");
+                                    XposedBridge.log("[WaAntiDelete] ViewOnce: blocked view count increment");
                                 }
                             }
                         } catch (Throwable e) {
@@ -36,12 +38,16 @@ public class ViewOnceUnlimited {
                         }
                     }
                 });
+                hooked++;
+            } catch (Throwable e) {
+                XposedBridge.log("[WaAntiDelete] ViewOnce: failed to hook " + method.getName() + ": " + e.getMessage());
             }
+        }
 
-            XposedBridge.log("[WaAntiDelete] ViewOnceUnlimited hooked (" + methods.length + " methods)");
-        } catch (Throwable e) {
-            XposedBridge.log("[WaAntiDelete] ViewOnceUnlimited hook failed: " + e.getMessage());
-            XposedBridge.log(e);
+        XposedBridge.log("[WaAntiDelete] ViewOnce hook SUCCESS: " + hooked + "/" + methods.length + " methods hooked");
+
+        if (hooked == 0) {
+            throw new RuntimeException("No ViewOnce methods were successfully hooked");
         }
     }
 }
