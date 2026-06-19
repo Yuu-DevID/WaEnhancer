@@ -158,6 +158,7 @@ public class AntiRevoke {
                                 int position = (Integer) itemParam.args[0];
                                 Object item = boundAdapter.getItem(position);
                                 MessageInfo info = buildMessageInfo(item);
+                                if (info == null) info = buildMessageInfoFromNestedFields(item);
                                 if (info == null) return;
 
                                 ViewGroup row = (ViewGroup) itemParam.getResult();
