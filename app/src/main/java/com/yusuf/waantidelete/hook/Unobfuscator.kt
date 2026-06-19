@@ -5,6 +5,7 @@ import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.query.enums.StringMatchType
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 
 object Unobfuscator {
 
@@ -41,59 +42,23 @@ object Unobfuscator {
 
     @JvmStatic
     fun loadAntiRevokeMessageMethod(classLoader: ClassLoader): Method {
-        // WhatsApp 2.26.23.74: "msgstore/edit/revoke" removed
-        // Use "msgstore/revoke" which is in the DB store method
-        // But we need the ACTUAL incoming handler
-        // Search for multiple patterns
-        val patterns = listOf(
-            "msgstore/revoke",
-            "msgstore/revoking",
-            "FMessageRevokedFactory/cloneIncomingRevokeMessage"
-        )
-        for (s in patterns) {
-            val methods = findAllMethodsByString(classLoader, s)
-            for (m in methods) {
-                Log.i(TAG, "Found method with '$s': ${m.declaringClass.name}->${m.name}(${m.parameterTypes.joinToString { it.simpleName }})")
-            }
-        }
-
-        // The actual revoke handler in 0nc takes (0nc, 0pU, int, boolean) -> boolean
-        // But we need to find it by string search
-        // Try "msgstore/revoke" first
-        for (s in listOf("msgstore/revoke/missing-old-id", "msgstore/revoking/has-placeholder")) {
-            val method = findMethodByString(classLoader, s)
+        for (pattern in listOf("msgstore/edit/revoke", "msgstore/revoking/", "msgstore/revoke/missing-old-id", "msgstore/revoking/has-placeholder")) {
+            val method = findMethodByString(classLoader, pattern)
             if (method != null) {
-                Log.i(TAG, "Revoke method found via '$s': ${method.declaringClass.name}->${method.name}")
+                Log.i(TAG, "Revoke method found via '$pattern': ${method.declaringClass.name}->${method.name}")
                 return method
             }
         }
-
         throw RuntimeException("AntiRevoke message method not found")
     }
 
     @JvmStatic
     fun loadAntiRevokeFStatusMethod(classLoader: ClassLoader): Method {
-        val result = bridge.findMethod {
-            matcher {
-                addUsingString("RevokeStatusManager/failed")
-            }
+        val clazz = findFirstClassUsingStrings(classLoader, "RevokeStatusManager/failed")
+            ?: throw RuntimeException("RevokeStatus manager not found")
+        return ReflectionUtils.findMethod(clazz) { method ->
+            method.parameterCount > 0 && method.parameterTypes.any { hasStatusKeyShape(it) }
         }
-        if (result.isEmpty()) throw RuntimeException("AntiRevoke FStatus method not found")
-
-        // Find the method that takes a parameter with fields A00, A01, A02, A03
-        for (methodData in result) {
-            try {
-                val method = methodData.getMethodInstance(classLoader)
-                Log.i(TAG, "RevokeStatus method candidate: ${method.declaringClass.name}->${method.name}(${method.parameterTypes.joinToString { it.simpleName }})")
-                if (method.parameterCount > 0) {
-                    // Any method with params should work - just find the right one
-                    return method
-                }
-            } catch (e: Throwable) {
-                Log.w(TAG, "Failed to load method: ${e.message}")
-            }
-        }
-        throw RuntimeException("AntiRevoke FStatus method not found")
     }
 
     @JvmStatic
@@ -120,6 +85,44 @@ object Unobfuscator {
             }
         }
         throw RuntimeException("MessageKey field not found")
+    }
+
+    @JvmStatic
+    fun loadUnknownStatusPlaybackMethod(classLoader: ClassLoader): Method {
+        val statusPlaybackClass = classLoader.loadClass("com.whatsapp.status.playback.fragment.StatusPlaybackContactFragment")
+        val result = bridge.findMethod {
+            matcher {
+                addUsingString("playbackFragment/refreshCurrentPageSubTitle message is empty")
+            }
+        }
+        if (result.isEmpty()) throw RuntimeException("Status playback refresh method not found")
+        val invokes = result[0].invokes
+        for (invoke in invokes) {
+            val method = invoke.getMethodInstance(classLoader)
+            if (Modifier.isStatic(method.modifiers) &&
+                method.parameterCount > 1 &&
+                method.parameterTypes.contains(statusPlaybackClass) &&
+                method.declaringClass == statusPlaybackClass
+            ) {
+                return method
+            }
+        }
+        throw RuntimeException("UnknownStatusPlayback method not found")
+    }
+
+    @JvmStatic
+    fun loadStatusPlaybackViewClass(classLoader: ClassLoader): Class<*> {
+        val statusHeaderId = appResourceId("status_header")
+        val menuId = appResourceId("menu")
+        val result = bridge.findClass {
+            matcher {
+                addMethod {
+                    usingNumbers(listOf(statusHeaderId, menuId))
+                }
+            }
+        }
+        if (result.isEmpty()) throw RuntimeException("StatusPlaybackViewClass not found")
+        return result[0].getInstance(classLoader)
     }
 
     @JvmStatic
@@ -188,5 +191,34 @@ object Unobfuscator {
             } catch (_: Throwable) {}
         }
         return null
+    }
+
+    private fun findFirstClassUsingStrings(classLoader: ClassLoader, vararg strings: String): Class<*>? {
+        val result = bridge.findClass {
+            matcher {
+                for (value in strings) {
+                    addUsingString(value, StringMatchType.Contains)
+                }
+            }
+        }
+        if (result.isEmpty()) return null
+        return result[0].getInstance(classLoader)
+    }
+
+    private fun hasStatusKeyShape(clazz: Class<*>): Boolean {
+        return try {
+            clazz.getDeclaredField("A00")
+            clazz.getDeclaredField("A02")
+            clazz.getDeclaredField("A03")
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun appResourceId(name: String): Int {
+        val app = android.app.AndroidAppHelper.currentApplication()
+        val packageName = app?.packageName ?: "com.whatsapp"
+        return app?.resources?.getIdentifier(name, "id", packageName) ?: 0
     }
 }

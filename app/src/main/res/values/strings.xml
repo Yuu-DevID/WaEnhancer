@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_toast">WaAntiDelete aktif. Anti revoke pesan dan status siap.</string>
+    <string name="message_removed_on">Pesan ini dihapus pada %1$s</string>
+</resources>

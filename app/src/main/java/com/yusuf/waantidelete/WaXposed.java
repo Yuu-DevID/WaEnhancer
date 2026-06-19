@@ -5,24 +5,33 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.content.res.XModuleResources;
+import android.widget.Toast;
 
 import com.yusuf.waantidelete.features.AntiRevoke;
 import com.yusuf.waantidelete.features.ViewOnceUnlimited;
 import com.yusuf.waantidelete.hook.Unobfuscator;
 
+import java.lang.reflect.Field;
+import java.util.Arrays;
+
+import de.robv.android.xposed.IXposedHookInitPackageResources;
 import de.robv.android.xposed.IXposedHookLoadPackage;
+import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
+import de.robv.android.xposed.callbacks.XC_InitPackageResources;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
-public class WaXposed implements IXposedHookLoadPackage {
+public class WaXposed implements IXposedHookLoadPackage, IXposedHookInitPackageResources, IXposedHookZygoteInit {
 
     private static final String PACKAGE_WPP = "com.whatsapp";
     private static final String PACKAGE_BUSINESS = "com.whatsapp.w4b";
     private static final String PREFS_NAME = "waantidelete_status";
 
     private static SharedPreferences statusPrefs;
+    private String modulePath;
 
     private static void writeStatus(String key, String value) {
         try {
@@ -84,10 +93,11 @@ public class WaXposed implements IXposedHookLoadPackage {
                             int errorCount = 0;
 
                             try {
-                                new AntiRevoke(loader).hook();
+                                hookedCount += new AntiRevoke(loader, app).hook();
                                 writeStatus("anti_revoke", "ok");
                                 XposedBridge.log("[WaAntiDelete] AntiRevoke hooked");
                             } catch (Throwable e) {
+                                errorCount++;
                                 writeStatus("anti_revoke", "error: " + e.getMessage());
                                 XposedBridge.log("[WaAntiDelete] AntiRevoke error: " + e.getMessage());
                                 XposedBridge.log(e);
@@ -103,6 +113,20 @@ public class WaXposed implements IXposedHookLoadPackage {
                                 writeStatus("view_once", "error: " + e.getMessage());
                                 XposedBridge.log("[WaAntiDelete] ViewOnce failed: " + e.getMessage());
                                 XposedBridge.log(e);
+                            }
+
+                            try {
+                                Toast.makeText(
+                                        app,
+                                        app.getString(R.string.startup_toast),
+                                        Toast.LENGTH_LONG
+                                ).show();
+                            } catch (Throwable toastError) {
+                                Toast.makeText(
+                                        app,
+                                        "WaAntiDelete aktif. Anti revoke pesan dan status siap.",
+                                        Toast.LENGTH_LONG
+                                ).show();
                             }
 
                             if (errorCount > 0) {
@@ -123,5 +147,45 @@ public class WaXposed implements IXposedHookLoadPackage {
                         }
                     }
                 });
+    }
+
+    @Override
+    public void handleInitPackageResources(XC_InitPackageResources.InitPackageResourcesParam resparam) throws Throwable {
+        if (!PACKAGE_WPP.equals(resparam.packageName) && !PACKAGE_BUSINESS.equals(resparam.packageName)) return;
+        XModuleResources modRes = XModuleResources.createInstance(modulePath, resparam.res);
+        injectResources(R.string.class, modRes, resparam);
+        injectResources(R.drawable.class, modRes, resparam);
+    }
+
+    @Override
+    public void initZygote(IXposedHookZygoteInit.StartupParam startupParam) {
+        modulePath = startupParam.modulePath;
+    }
+
+    private void injectResources(Class<?> resourceClass, XModuleResources modRes, XC_InitPackageResources.InitPackageResourcesParam resparam) {
+        int injected = 0;
+        for (Field field : resourceClass.getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                if (field.getType() == int.class) {
+                    int resId = field.getInt(null);
+                    if (resId > 0x7f000000) {
+                        field.set(null, resparam.res.addResource(modRes, resId));
+                        injected++;
+                    }
+                } else if (field.getType() == int[].class) {
+                    int[] values = (int[]) field.get(null);
+                    if (values == null) continue;
+                    for (int i = 0; i < values.length; i++) {
+                        if (values[i] > 0x7f000000) {
+                            values[i] = resparam.res.addResource(modRes, values[i]);
+                            injected++;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        XposedBridge.log("[WaAntiDelete] Injected " + injected + " resources for " + resourceClass.getSimpleName());
     }
 }

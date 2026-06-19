@@ -2,11 +2,8 @@ package com.yusuf.waantidelete.hook;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -44,6 +41,14 @@ public class ReflectionUtils {
 
     public static List<Field> getFieldsByType(Class<?> cls, Class<?> type) {
         return Arrays.stream(cls.getDeclaredFields()).filter(f -> type == f.getType()).collect(Collectors.toList());
+    }
+
+    public static Object findArg(Object[] args, Class<?> type) {
+        if (args == null || type == null) return null;
+        for (Object arg : args) {
+            if (arg != null && type.isInstance(arg)) return arg;
+        }
+        return null;
     }
 
     public static Object getObjectField(Field field, Object obj) {

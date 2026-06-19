@@ -1,14 +1,35 @@
 package com.yusuf.waantidelete.features;
 
-import android.util.Log;
+import android.app.Activity;
+import android.app.Application;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.TextPaint;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.BaseAdapter;
+import android.widget.HeaderViewListAdapter;
+import android.widget.ListAdapter;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
 
+import com.yusuf.waantidelete.R;
+import com.yusuf.waantidelete.data.RevokedMessageStore;
+import com.yusuf.waantidelete.hook.ReflectionUtils;
 import com.yusuf.waantidelete.hook.Unobfuscator;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.text.DateFormat;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -17,206 +38,399 @@ import de.robv.android.xposed.XposedHelpers;
 public class AntiRevoke {
 
     private static final String TAG = "WaAntiDelete";
+    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+    private static final ConcurrentHashMap<String, Set<String>> REVOKED_IDS = new ConcurrentHashMap<>();
+
     private final ClassLoader loader;
-    private static final Set<String> revokedMessages = new HashSet<>();
+    private final Application application;
 
-    private static Class<?> fMessageClass;
-    private static Field keyField;
+    private Class<?> fMessageClass;
+    private Field keyField;
+    private Field deviceJidField;
+    private Class<?> statusPlaybackViewClass;
+    private Method unknownStatusPlaybackMethod;
+    private int dateViewId;
 
-    public AntiRevoke(ClassLoader loader) {
+    private static volatile Activity currentActivity;
+    private static volatile BaseAdapter currentConversationAdapter;
+
+    public AntiRevoke(ClassLoader loader, Application application) {
         this.loader = loader;
+        this.application = application;
     }
 
-    public void hook() {
-        hookAllRevokeCandidates();
+    public int hook() {
+        initializeMetadata();
+        hookCurrentActivityTracker();
+        hookConversationRows();
+        hookRevokeMessages();
+        hookRevokeStatuses();
+        hookStatusPlaybackRows();
+        return 5;
     }
 
-    private void hookAllRevokeCandidates() {
+    private void initializeMetadata() {
         try {
             fMessageClass = Unobfuscator.loadFMessageClass(loader);
             keyField = Unobfuscator.loadMessageKeyField(loader);
-            Log.i(TAG, "FMessage: " + fMessageClass.getName() + ", Key field: " + keyField.getName());
+            deviceJidField = ReflectionUtils.findFieldIfExists(
+                    fMessageClass,
+                    field -> field.getType().getName().endsWith("jid.DeviceJid")
+            );
+            statusPlaybackViewClass = Unobfuscator.loadStatusPlaybackViewClass(loader);
+            unknownStatusPlaybackMethod = Unobfuscator.loadUnknownStatusPlaybackMethod(loader);
+            dateViewId = application.getResources().getIdentifier("date", "id", application.getPackageName());
+            XposedBridge.log("[" + TAG + "] AntiRevoke metadata ready");
         } catch (Throwable e) {
-            Log.e(TAG, "Failed to init FMessage: " + e.getMessage());
-            return;
+            throw new RuntimeException("Failed to initialize AntiRevoke metadata", e);
+        }
+    }
+
+    private void hookRevokeMessages() {
+        Method messageMethod = Unobfuscator.loadAntiRevokeMessageMethod(loader);
+        if (messageMethod == null) {
+            throw new IllegalStateException("Revoke message hook not found");
         }
 
-        // Hook ALL methods that contain revoke-related strings
-        String[] searchPatterns = {
-            "msgstore/revoke/missing-old-id",
-            "msgstore/revoking/has-placeholder",
-            "msgstore/revoke: Failed to re-insert",
-            "FMessageRevokedFactory/cloneIncomingRevokeMessage"
-        };
+        XposedBridge.hookMethod(messageMethod, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                MessageInfo info = findMessageInfo(param.args);
+                if (info == null || info.messageId == null || info.remoteJid == null) return;
 
-        int hookedCount = 0;
-        for (String pattern : searchPatterns) {
+                boolean shouldBlock = info.remoteJid.isGroup ? info.deviceJid != null : !info.isFromMe;
+                if (!shouldBlock) return;
+
+                persistRevocation(info);
+                setSuccessfulResult(param, messageMethod.getReturnType());
+            }
+        });
+    }
+
+    private void hookRevokeStatuses() {
+        Method statusMethod = Unobfuscator.loadAntiRevokeFStatusMethod(loader);
+        XposedBridge.hookMethod(statusMethod, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                StatusInfo info = findStatusInfo(param.args);
+                if (info == null || info.isFromMe || info.messageId == null || info.messageId.isEmpty()) return;
+
+                persistRevocation(info.toMessageInfo());
+                setSuccessfulResult(param, statusMethod.getReturnType());
+            }
+        });
+    }
+
+    private void hookConversationRows() {
+        XposedHelpers.findAndHookMethod(
+                ListView.class,
+                "setAdapter",
+                ListAdapter.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        Activity activity = currentActivity;
+                        if (activity == null || !"Conversation".equals(activity.getClass().getSimpleName())) return;
+
+                        ListView listView = (ListView) param.thisObject;
+                        if (listView.getId() != android.R.id.list) return;
+
+                        ListAdapter adapter = (ListAdapter) param.args[0];
+                        if (adapter instanceof HeaderViewListAdapter) {
+                            adapter = ((HeaderViewListAdapter) adapter).getWrappedAdapter();
+                        }
+                        if (!(adapter instanceof BaseAdapter)) return;
+
+                        final ListAdapter boundAdapter = adapter;
+                        currentConversationAdapter = (BaseAdapter) boundAdapter;
+                        Method getView = boundAdapter.getClass().getDeclaredMethod(
+                                "getView",
+                                int.class,
+                                View.class,
+                                ViewGroup.class
+                        );
+                        XposedBridge.hookMethod(getView, new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam itemParam) {
+                                if (itemParam.thisObject != boundAdapter) return;
+                                if (!(itemParam.result instanceof ViewGroup)) return;
+
+                                int position = (Integer) itemParam.args[0];
+                                Object item = boundAdapter.getItem(position);
+                                MessageInfo info = buildMessageInfo(item);
+                                if (info == null) return;
+
+                                ViewGroup row = (ViewGroup) itemParam.result;
+                                TextView dateTextView = row.findViewById(dateViewId);
+                                bindIndicator(info, dateTextView);
+                            }
+                        });
+                    }
+                }
+        );
+    }
+
+    private void hookStatusPlaybackRows() {
+        XposedBridge.hookMethod(unknownStatusPlaybackMethod, new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                Object holder = ReflectionUtils.findArg(param.args, param.method.getDeclaringClass());
+                if (holder == null) return;
+
+                Field statusField = ReflectionUtils.findFieldIfExists(
+                        param.method.getDeclaringClass(),
+                        field -> statusPlaybackViewClass.isAssignableFrom(field.getType())
+                );
+                if (statusField == null) return;
+
+                Object statusView = ReflectionUtils.getObjectField(statusField, holder);
+                if (statusView == null) return;
+
+                MessageInfo info = findMessageInfo(param.args);
+                if (info == null) return;
+
+                List<Field> textViewFields = ReflectionUtils.getFieldsByType(statusPlaybackViewClass, TextView.class);
+                for (Field field : textViewFields) {
+                    TextView textView = (TextView) ReflectionUtils.getObjectField(field, statusView);
+                    if (textView != null && textView.getId() == dateViewId) {
+                        bindIndicator(info, textView);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    private void hookCurrentActivityTracker() {
+        XposedBridge.hookAllMethods(Activity.class, "onResume", new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                currentActivity = (Activity) param.thisObject;
+            }
+        });
+    }
+
+    private void bindIndicator(MessageInfo info, TextView dateTextView) {
+        if (dateTextView == null || info.remoteJid == null || info.messageId == null) return;
+
+        String jidKey = info.remoteJid.storageKey();
+        Set<String> revokedIds = getRevokedIds(jidKey);
+        String originalText = (String) XposedHelpers.getAdditionalInstanceField(dateTextView, "waad_original_text");
+
+        if (revokedIds.contains(info.messageId)) {
+            if (originalText == null) {
+                originalText = String.valueOf(dateTextView.getText());
+                XposedHelpers.setAdditionalInstanceField(dateTextView, "waad_original_text", originalText);
+            }
+
+            dateTextView.setText(originalText);
+            dateTextView.setCompoundDrawablesWithIntrinsicBounds(null, null, application.getDrawable(R.drawable.deleted), null);
+            dateTextView.setCompoundDrawablePadding(dpToPx(4));
+
+            TextPaint paint = dateTextView.getPaint();
+            paint.setUnderlineText(true);
+
+            long timestamp = RevokedMessageStore.getInstance(application).getTimestamp(jidKey, info.messageId);
+            if (timestamp > 0L) {
+                String removedAt = DateFormat.getDateTimeInstance(
+                        DateFormat.SHORT,
+                        DateFormat.SHORT,
+                        Locale.getDefault()
+                ).format(new Date(timestamp));
+                dateTextView.setOnClickListener(v -> Toast.makeText(
+                        application,
+                        application.getString(R.string.message_removed_on, removedAt),
+                        Toast.LENGTH_LONG
+                ).show());
+            }
+        } else {
+            dateTextView.setCompoundDrawables(null, null, null, null);
+            if (originalText != null) {
+                dateTextView.setText(originalText);
+            }
+            dateTextView.getPaint().setUnderlineText(false);
+            dateTextView.setOnClickListener(null);
+        }
+    }
+
+    private void persistRevocation(MessageInfo info) {
+        String jidKey = info.remoteJid.storageKey();
+        if (jidKey == null || jidKey.isEmpty()) return;
+
+        Set<String> revokedIds = getRevokedIds(jidKey);
+        if (revokedIds.contains(info.messageId)) return;
+
+        revokedIds.add(info.messageId);
+        RevokedMessageStore.getInstance(application).put(jidKey, info.messageId, System.currentTimeMillis());
+        notifyConversationChanged();
+    }
+
+    private Set<String> getRevokedIds(String jidKey) {
+        return REVOKED_IDS.computeIfAbsent(jidKey, key ->
+                Collections.synchronizedSet(new HashSet<>(
+                        RevokedMessageStore.getInstance(application).getMessageIdsByJid(key)
+                ))
+        );
+    }
+
+    private void notifyConversationChanged() {
+        BaseAdapter adapter = currentConversationAdapter;
+        Activity activity = currentActivity;
+        if (adapter == null || activity == null) return;
+
+        MAIN_HANDLER.post(() -> {
             try {
-                var methods = Unobfuscator.findAllMethodsByString(loader, pattern);
-                for (Method method : methods) {
-                    try {
-                        hookRevokeMethod(method, pattern);
-                        hookedCount++;
-                    } catch (Throwable e) {
-                        Log.w(TAG, "Failed to hook " + method.getName() + ": " + e.getMessage());
-                    }
-                }
-            } catch (Throwable e) {
-                Log.w(TAG, "Search failed for '" + pattern + "': " + e.getMessage());
-            }
-        }
-
-        // Also hook RevokeStatusManager
-        try {
-            Method statusMethod = Unobfuscator.loadAntiRevokeFStatusMethod(loader);
-            hookStatusRevoke(statusMethod);
-            hookedCount++;
-        } catch (Throwable e) {
-            Log.w(TAG, "Status revoke hook skipped: " + e.getMessage());
-        }
-
-        Log.i(TAG, "Hooked " + hookedCount + " revoke candidate methods");
-    }
-
-    private void hookRevokeMethod(Method method, String searchPattern) {
-        String sig = method.getDeclaringClass().getSimpleName() + "->" + method.getName()
-                + "(" + paramsSignature(method) + ")";
-        Log.i(TAG, "Hooking revoke candidate [" + searchPattern + "]: " + sig);
-
-        XposedBridge.hookMethod(method, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) {
-                Log.i(TAG, ">>> REVOKE CANDIDATE TRIGGERED: " + sig);
-                Log.i(TAG, "    this=" + (param.thisObject != null ? param.thisObject.getClass().getName() : "static"));
-                Log.i(TAG, "    args.length=" + param.args.length);
-
-                for (int i = 0; i < param.args.length; i++) {
-                    Object arg = param.args[i];
-                    if (arg == null) {
-                        Log.i(TAG, "    arg[" + i + "] = null");
-                    } else {
-                        Log.i(TAG, "    arg[" + i + "] = " + arg.getClass().getName()
-                                + " isFMessage=" + (fMessageClass != null && fMessageClass.isInstance(arg)));
-                    }
-                }
-
-                // Try to find FMessage in args
-                Object fMessageObj = findArgOfType(param.args, fMessageClass);
-                if (fMessageObj != null) {
-                    try {
-                        Object key = keyField.get(fMessageObj);
-                        if (key != null) {
-                            String msgId = getMessageIdFromKey(key);
-                            boolean isFromMe = getIsFromMeFromKey(key);
-                            Log.i(TAG, "    FMessage: msgId=" + msgId + ", isFromMe=" + isFromMe);
-
-                            if (!isFromMe && msgId != null && !msgId.isEmpty()) {
-                                revokedMessages.add(msgId);
-                                if (method.getReturnType() == boolean.class) {
-                                    param.setResult(true);
-                                } else if (method.getReturnType() == int.class || method.getReturnType() == Integer.class) {
-                                    param.setResult(0);
-                                }
-                                Log.i(TAG, "    >>> REVOKE BLOCKED: " + msgId);
-                            }
-                        }
-                    } catch (Throwable e) {
-                        Log.e(TAG, "    Error processing FMessage: " + e.getMessage());
-                    }
-                } else {
-                    Log.w(TAG, "    No FMessage found in args");
-                }
+                adapter.notifyDataSetChanged();
+            } catch (Throwable ignored) {
             }
         });
-        Log.i(TAG, "Hook attached: " + sig);
     }
 
-    private void hookStatusRevoke(Method method) {
-        String sig = method.getDeclaringClass().getSimpleName() + "->" + method.getName();
-        Log.i(TAG, "Hooking status revoke: " + sig);
-
-        XposedBridge.hookMethod(method, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) {
-                Log.i(TAG, ">>> STATUS REVOKE TRIGGERED: " + sig);
-                Log.i(TAG, "    args.length=" + param.args.length);
-
-                for (int i = 0; i < param.args.length; i++) {
-                    Object arg = param.args[i];
-                    if (arg == null) continue;
-                    Log.i(TAG, "    arg[" + i + "] = " + arg.getClass().getName());
-                    // Try to extract message info from the arg
-                    try {
-                        boolean hasA03 = hasField(arg.getClass(), "A03", boolean.class);
-                        boolean hasA02 = hasField(arg.getClass(), "A02", String.class);
-                        if (hasA03 && hasA02) {
-                            boolean isFromMe = XposedHelpers.getBooleanField(arg, "A03");
-                            String msgId = (String) XposedHelpers.getObjectField(arg, "A02");
-                            Log.i(TAG, "    FStatusKey: msgId=" + msgId + ", isFromMe=" + isFromMe);
-                            if (!isFromMe && msgId != null && !msgId.isEmpty()) {
-                                revokedMessages.add(msgId);
-                                param.setResult(0);
-                                Log.i(TAG, "    >>> STATUS REVOKE BLOCKED: " + msgId);
-                            }
-                        }
-                    } catch (Throwable ignored) {}
-                }
-            }
-        });
-        Log.i(TAG, "Status hook attached: " + sig);
-    }
-
-    // --- Helpers ---
-
-    private static Object findArgOfType(Object[] args, Class<?> type) {
-        if (args == null || type == null) return null;
+    private MessageInfo findMessageInfo(Object[] args) {
+        if (args == null) return null;
         for (Object arg : args) {
-            if (arg != null && type.isInstance(arg)) return arg;
+            MessageInfo info = buildMessageInfo(arg);
+            if (info != null) return info;
+            info = buildMessageInfoFromNestedFields(arg);
+            if (info != null) return info;
         }
         return null;
     }
 
-    private static String getMessageIdFromKey(Object key) {
-        try {
-            for (Field f : key.getClass().getDeclaredFields()) {
-                if (f.getType() == String.class) {
-                    f.setAccessible(true);
-                    String val = (String) f.get(key);
-                    if (val != null && !val.isEmpty()) return val;
-                }
-            }
-        } catch (Throwable ignored) {}
-        return null;
+    private MessageInfo buildMessageInfoFromNestedFields(Object target) {
+        if (target == null) return null;
+        Field nestedField = ReflectionUtils.findFieldIfExists(
+                target.getClass(),
+                field -> fMessageClass.isAssignableFrom(field.getType())
+        );
+        if (nestedField == null) return null;
+        return buildMessageInfo(ReflectionUtils.getObjectField(nestedField, target));
     }
 
-    private static boolean getIsFromMeFromKey(Object key) {
+    private MessageInfo buildMessageInfo(Object fMessageObject) {
+        if (fMessageObject == null || !fMessageClass.isInstance(fMessageObject)) return null;
         try {
-            for (Field f : key.getClass().getDeclaredFields()) {
-                if (f.getType() == boolean.class) {
-                    f.setAccessible(true);
-                    return f.getBoolean(key);
-                }
-            }
-        } catch (Throwable ignored) {}
-        return false;
-    }
+            Object keyObject = keyField.get(fMessageObject);
+            if (keyObject == null) return null;
 
-    private static boolean hasField(Class<?> clazz, String name, Class<?> type) {
-        try {
-            Field f = clazz.getDeclaredField(name);
-            return f.getType() == type;
+            MessageInfo info = new MessageInfo();
+            info.fMessage = fMessageObject;
+            info.keyObject = keyObject;
+            info.messageId = (String) XposedHelpers.getObjectField(keyObject, "A01");
+            info.isFromMe = XposedHelpers.getBooleanField(keyObject, "A02");
+            info.remoteJid = new JidInfo(XposedHelpers.getObjectField(keyObject, "A00"));
+            info.deviceJid = deviceJidField == null ? null : deviceJidField.get(fMessageObject);
+            return info;
         } catch (Throwable e) {
-            return false;
+            XposedBridge.log("[" + TAG + "] Failed to build message info: " + e.getMessage());
+            return null;
         }
     }
 
-    private static String paramsSignature(Method method) {
-        StringBuilder sb = new StringBuilder();
-        Class<?>[] params = method.getParameterTypes();
-        for (int i = 0; i < params.length; i++) {
-            if (i > 0) sb.append(", ");
-            sb.append(params[i].getSimpleName());
+    private StatusInfo findStatusInfo(Object[] args) {
+        if (args == null) return null;
+        for (Object arg : args) {
+            StatusInfo info = buildStatusInfo(arg);
+            if (info != null) return info;
         }
-        return sb.toString();
+        return null;
+    }
+
+    private StatusInfo buildStatusInfo(Object candidate) {
+        if (candidate == null) return null;
+        try {
+            Field remoteField = candidate.getClass().getDeclaredField("A00");
+            Field messageIdField = candidate.getClass().getDeclaredField("A02");
+            Field fromMeField = candidate.getClass().getDeclaredField("A03");
+            remoteField.setAccessible(true);
+            messageIdField.setAccessible(true);
+            fromMeField.setAccessible(true);
+
+            Object remoteJid = remoteField.get(candidate);
+            Object messageId = messageIdField.get(candidate);
+            if (!(messageId instanceof String)) return null;
+
+            StatusInfo info = new StatusInfo();
+            info.remoteJid = new JidInfo(remoteJid);
+            info.messageId = (String) messageId;
+            info.isFromMe = fromMeField.getBoolean(candidate);
+            return info;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void setSuccessfulResult(XC_MethodHook.MethodHookParam param, Class<?> returnType) {
+        if (returnType == boolean.class || returnType == Boolean.class) {
+            param.setResult(true);
+        } else if (returnType == int.class || returnType == Integer.class) {
+            param.setResult(0);
+        } else if (!Modifier.isAbstract(param.method.getModifiers())) {
+            param.setResult(null);
+        }
+    }
+
+    private int dpToPx(int dp) {
+        return (int) (application.getResources().getDisplayMetrics().density * dp);
+    }
+
+    private static final class MessageInfo {
+        Object fMessage;
+        Object keyObject;
+        String messageId;
+        boolean isFromMe;
+        JidInfo remoteJid;
+        Object deviceJid;
+    }
+
+    private static final class StatusInfo {
+        String messageId;
+        boolean isFromMe;
+        JidInfo remoteJid;
+
+        MessageInfo toMessageInfo() {
+            MessageInfo info = new MessageInfo();
+            info.messageId = messageId;
+            info.isFromMe = isFromMe;
+            info.remoteJid = remoteJid;
+            return info;
+        }
+    }
+
+    private static final class JidInfo {
+        final String raw;
+        final String phoneNumber;
+        final boolean isGroup;
+
+        JidInfo(Object jidObject) {
+            String rawValue = null;
+            try {
+                rawValue = (String) XposedHelpers.callMethod(jidObject, "getRawString");
+            } catch (Throwable ignored) {
+            }
+            raw = sanitize(rawValue);
+            phoneNumber = extractPhoneNumber(raw);
+            isGroup = raw != null && raw.endsWith("@g.us");
+        }
+
+        String storageKey() {
+            return phoneNumber != null ? phoneNumber : raw;
+        }
+
+        private static String sanitize(String value) {
+            if (value == null) return null;
+            return value.replaceFirst("\\.[\\d:]+@", "@");
+        }
+
+        private static String extractPhoneNumber(String value) {
+            if (value == null) return null;
+            int atIndex = value.indexOf('@');
+            if (atIndex <= 0) return value;
+            int dotIndex = value.indexOf('.');
+            if (dotIndex > 0 && dotIndex < atIndex) {
+                return value.substring(0, dotIndex);
+            }
+            return value.substring(0, atIndex);
+        }
     }
 }
