@@ -203,6 +203,12 @@ public class AntiRevoke {
     }
 
     private void hookCurrentActivityTracker() {
+        XposedBridge.hookAllMethods(Activity.class, "onCreate", new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                currentActivity = (Activity) param.thisObject;
+            }
+        });
         XposedBridge.hookAllMethods(Activity.class, "onResume", new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) {
