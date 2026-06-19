@@ -58,7 +58,6 @@ public class App extends Application {
         super.onCreate();
         instance = this;
         installCrashHandler();
-        DefaultSettingsLoader.applyDefaults(this);
         var sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         var mode = Integer.parseInt(sharedPreferences.getString("thememode", "0"));
         setThemeMode(mode);
