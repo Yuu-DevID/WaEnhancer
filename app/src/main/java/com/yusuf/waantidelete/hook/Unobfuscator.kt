@@ -48,42 +48,22 @@ object Unobfuscator {
 
     @JvmStatic
     fun loadAntiRevokeFStatusMethod(classLoader: ClassLoader): Method {
-        try {
-            val clazz = findClassByString(classLoader, "RevokeStatusManager/failed")
-                ?: throw RuntimeException("RevokeStatusManager class not found")
-            Log.d(TAG, "Found RevokeStatusManager class: ${clazz.name}")
-
-            val fStatusKeyClass = loadFStatusKeyClass(classLoader)
-            Log.d(TAG, "FStatusKey class: ${fStatusKeyClass.name}")
-
-            for (method in clazz.declaredMethods) {
-                if (method.parameterCount > 0 &&
-                    fStatusKeyClass.isAssignableFrom(method.parameterTypes[0])) {
-                    Log.d(TAG, "Found FStatus revoke method: ${method.name}")
-                    return method
-                }
+        val fStatusKeyClass = loadFStatusKeyClass(classLoader)
+        val result = bridge.findMethod {
+            matcher {
+                addUsingString("RevokeStatusManager/failed")
             }
-
-            for (method in clazz.methods) {
-                if (method.parameterCount > 0 &&
-                    fStatusKeyClass.isAssignableFrom(method.parameterTypes[0])) {
-                    Log.d(TAG, "Found FStatus revoke method (via methods): ${method.name}")
-                    return method
-                }
-            }
-
-            Log.w(TAG, "Methods in RevokeStatusManager:")
-            for (m in clazz.declaredMethods) {
-                val params = m.parameterTypes.joinToString { it.simpleName }
-                Log.w(TAG, "  ${m.name}($params) -> ${m.returnType.simpleName}")
-            }
-
-            throw RuntimeException("FStatus revoke method not found in ${clazz.name}")
-        } catch (e: RuntimeException) {
-            throw e
-        } catch (e: Exception) {
-            throw RuntimeException("loadAntiRevokeFStatusMethod failed", e)
         }
+        if (result.isEmpty()) throw RuntimeException("AntiRevoke FStatus method not found")
+
+        for (methodData in result) {
+            val method = methodData.getMethodInstance(classLoader)
+            if (method.parameterCount > 0 &&
+                fStatusKeyClass.isAssignableFrom(method.parameterTypes[0])) {
+                return method
+            }
+        }
+        throw RuntimeException("AntiRevoke FStatus method not found")
     }
 
     @JvmStatic
@@ -94,23 +74,18 @@ object Unobfuscator {
                 addUsingString("senderJid")
             }
         }
-        if (result.isEmpty()) {
-            Log.w(TAG, "FStatusKey not found with 'Key(id=' + 'senderJid', trying alternatives...")
-            val alt1 = findClassByString(classLoader, "FStatusKey")
-            if (alt1 != null) return alt1
+        if (result.isEmpty()) throw RuntimeException("FStatusKey class not found")
+        return result[0].getInstance(classLoader)
+    }
 
-            val alt2 = findClassByString(classLoader, "FStatus state")
-            if (alt2 != null) {
-                for (inner in alt2.declaredClasses) {
-                    if (inner.simpleName?.contains("Key") == true) {
-                        Log.d(TAG, "Found FStatusKey via inner class: ${inner.name}")
-                        return inner
-                    }
-                }
+    @JvmStatic
+    fun loadFStatusClass(classLoader: ClassLoader): Class<*> {
+        val result = bridge.findClass {
+            matcher {
+                addUsingString("FStatus state")
             }
-
-            throw RuntimeException("FStatusKey class not found")
         }
+        if (result.isEmpty()) throw RuntimeException("FStatus class not found")
         return result[0].getInstance(classLoader)
     }
 
@@ -194,19 +169,5 @@ object Unobfuscator {
             } catch (_: Throwable) {}
         }
         return null
-    }
-
-    private fun findClassByString(classLoader: ClassLoader, searchString: String): Class<*>? {
-        val result = bridge.findClass {
-            matcher {
-                addUsingString(searchString)
-            }
-        }
-        if (result.isEmpty()) return null
-        return try {
-            result[0].getInstance(classLoader)
-        } catch (_: Throwable) {
-            null
-        }
     }
 }
