@@ -153,14 +153,14 @@ public class AntiRevoke {
                             @Override
                             protected void afterHookedMethod(MethodHookParam itemParam) {
                                 if (itemParam.thisObject != boundAdapter) return;
-                                if (!(itemParam.result instanceof ViewGroup)) return;
+                                if (!(itemParam.getResult() instanceof ViewGroup)) return;
 
                                 int position = (Integer) itemParam.args[0];
                                 Object item = boundAdapter.getItem(position);
                                 MessageInfo info = buildMessageInfo(item);
                                 if (info == null) return;
 
-                                ViewGroup row = (ViewGroup) itemParam.result;
+                                ViewGroup row = (ViewGroup) itemParam.getResult();
                                 TextView dateTextView = row.findViewById(dateViewId);
                                 bindIndicator(info, dateTextView);
                             }
