@@ -9,6 +9,8 @@ import android.content.res.XModuleResources;
 import android.widget.Toast;
 
 import com.yusuf.waantidelete.features.AntiRevoke;
+import com.yusuf.waantidelete.features.HideSeen;
+import com.yusuf.waantidelete.features.MediaQuality;
 import com.yusuf.waantidelete.features.ViewOnceUnlimited;
 import com.yusuf.waantidelete.hook.Unobfuscator;
 
@@ -112,6 +114,30 @@ public class WaXposed implements IXposedHookLoadPackage, IXposedHookInitPackageR
                                 errorCount++;
                                 writeStatus("view_once", "error: " + e.getMessage());
                                 XposedBridge.log("[WaAntiDelete] ViewOnce failed: " + e.getMessage());
+                                XposedBridge.log(e);
+                            }
+
+                            try {
+                                new HideSeen(loader).hook();
+                                hookedCount++;
+                                writeStatus("hide_seen", "ok");
+                                XposedBridge.log("[WaAntiDelete] HideSeen hooked");
+                            } catch (Throwable e) {
+                                errorCount++;
+                                writeStatus("hide_seen", "error: " + e.getMessage());
+                                XposedBridge.log("[WaAntiDelete] HideSeen error: " + e.getMessage());
+                                XposedBridge.log(e);
+                            }
+
+                            try {
+                                new MediaQuality(loader).hook();
+                                hookedCount++;
+                                writeStatus("media_quality", "ok");
+                                XposedBridge.log("[WaAntiDelete] MediaQuality hooked");
+                            } catch (Throwable e) {
+                                errorCount++;
+                                writeStatus("media_quality", "error: " + e.getMessage());
+                                XposedBridge.log("[WaAntiDelete] MediaQuality error: " + e.getMessage());
                                 XposedBridge.log(e);
                             }
 

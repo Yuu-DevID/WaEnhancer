@@ -2,4 +2,10 @@
 <resources>
     <string name="startup_toast">WaAntiDelete aktif. Anti revoke pesan dan status siap.</string>
     <string name="message_removed_on">Pesan ini dihapus pada %1$s</string>
+    <string name="hide_seen_toast">Hide seen status aktif</string>
+    <string name="media_quality_toast">HD media quality aktif</string>
+    <string name="hide_seen_feature">Hide Seen Status</string>
+    <string name="hide_seen_feature_desc">Sembunyikan status dilihat saat melihat status orang lain</string>
+    <string name="media_quality_feature">HD Media Upload</string>
+    <string name="media_quality_feature_desc">Selalu kirim media dengan kualitas HD</string>
 </resources>
