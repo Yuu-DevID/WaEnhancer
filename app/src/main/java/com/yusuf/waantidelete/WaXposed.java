@@ -85,13 +85,11 @@ public class WaXposed implements IXposedHookLoadPackage {
 
                             try {
                                 new AntiRevoke(loader).hook();
-                                hookedCount++;
                                 writeStatus("anti_revoke", "ok");
                                 XposedBridge.log("[WaAntiDelete] AntiRevoke hooked");
                             } catch (Throwable e) {
-                                errorCount++;
                                 writeStatus("anti_revoke", "error: " + e.getMessage());
-                                XposedBridge.log("[WaAntiDelete] AntiRevoke failed: " + e.getMessage());
+                                XposedBridge.log("[WaAntiDelete] AntiRevoke error: " + e.getMessage());
                                 XposedBridge.log(e);
                             }
 

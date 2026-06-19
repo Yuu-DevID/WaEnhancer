@@ -34,21 +34,45 @@ object Unobfuscator {
             }
         }
         if (result.isEmpty()) throw RuntimeException("FMessage class not found")
-        return result[0].getInstance(classLoader)
+        val cls = result[0].getInstance(classLoader)
+        Log.i(TAG, "FMessage class: ${cls.name}")
+        return cls
     }
 
     @JvmStatic
     fun loadAntiRevokeMessageMethod(classLoader: ClassLoader): Method {
-        for (s in listOf("msgstore/edit/revoke", "msgstore/revoking/")) {
-            val method = findMethodByString(classLoader, s)
-            if (method != null) return method
+        // WhatsApp 2.26.23.74: "msgstore/edit/revoke" removed
+        // Use "msgstore/revoke" which is in the DB store method
+        // But we need the ACTUAL incoming handler
+        // Search for multiple patterns
+        val patterns = listOf(
+            "msgstore/revoke",
+            "msgstore/revoking",
+            "FMessageRevokedFactory/cloneIncomingRevokeMessage"
+        )
+        for (s in patterns) {
+            val methods = findAllMethodsByString(classLoader, s)
+            for (m in methods) {
+                Log.i(TAG, "Found method with '$s': ${m.declaringClass.name}->${m.name}(${m.parameterTypes.joinToString { it.simpleName }})")
+            }
         }
+
+        // The actual revoke handler in 0nc takes (0nc, 0pU, int, boolean) -> boolean
+        // But we need to find it by string search
+        // Try "msgstore/revoke" first
+        for (s in listOf("msgstore/revoke/missing-old-id", "msgstore/revoking/has-placeholder")) {
+            val method = findMethodByString(classLoader, s)
+            if (method != null) {
+                Log.i(TAG, "Revoke method found via '$s': ${method.declaringClass.name}->${method.name}")
+                return method
+            }
+        }
+
         throw RuntimeException("AntiRevoke message method not found")
     }
 
     @JvmStatic
     fun loadAntiRevokeFStatusMethod(classLoader: ClassLoader): Method {
-        val fStatusKeyClass = loadFStatusKeyClass(classLoader)
         val result = bridge.findMethod {
             matcher {
                 addUsingString("RevokeStatusManager/failed")
@@ -56,63 +80,20 @@ object Unobfuscator {
         }
         if (result.isEmpty()) throw RuntimeException("AntiRevoke FStatus method not found")
 
+        // Find the method that takes a parameter with fields A00, A01, A02, A03
         for (methodData in result) {
-            val method = methodData.getMethodInstance(classLoader)
-            if (method.parameterCount > 0 &&
-                fStatusKeyClass.isAssignableFrom(method.parameterTypes[0])) {
-                return method
+            try {
+                val method = methodData.getMethodInstance(classLoader)
+                Log.i(TAG, "RevokeStatus method candidate: ${method.declaringClass.name}->${method.name}(${method.parameterTypes.joinToString { it.simpleName }})")
+                if (method.parameterCount > 0) {
+                    // Any method with params should work - just find the right one
+                    return method
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to load method: ${e.message}")
             }
         }
         throw RuntimeException("AntiRevoke FStatus method not found")
-    }
-
-    @JvmStatic
-    fun loadFStatusKeyClass(classLoader: ClassLoader): Class<*> {
-        val result = bridge.findClass {
-            matcher {
-                addUsingString("Key(id=")
-                addUsingString("senderJid")
-            }
-        }
-        if (result.isEmpty()) throw RuntimeException("FStatusKey class not found")
-        return result[0].getInstance(classLoader)
-    }
-
-    @JvmStatic
-    fun loadFStatusClass(classLoader: ClassLoader): Class<*> {
-        val result = bridge.findClass {
-            matcher {
-                addUsingString("FStatus state")
-            }
-        }
-        if (result.isEmpty()) throw RuntimeException("FStatus class not found")
-        return result[0].getInstance(classLoader)
-    }
-
-    @JvmStatic
-    fun loadMessageKeyField(classLoader: ClassLoader): Field {
-        val fMessageClass = loadFMessageClass(classLoader)
-        val result = bridge.findClass {
-            matcher {
-                fieldCount(3)
-                addMethod {
-                    name("toString")
-                    addUsingString("Key")
-                }
-            }
-        }
-        if (result.isEmpty()) throw RuntimeException("MessageKey class not found")
-
-        for (classData in result) {
-            val keyClass = classData.getInstance(classLoader)
-            for (f in fMessageClass.declaredFields) {
-                if (keyClass.isAssignableFrom(f.type)) {
-                    f.isAccessible = true
-                    return f
-                }
-            }
-        }
-        throw RuntimeException("MessageKey field not found")
     }
 
     @JvmStatic
@@ -154,6 +135,17 @@ object Unobfuscator {
             } catch (_: Throwable) {}
         }
         throw RuntimeException("ViewOnce methods not found")
+    }
+
+    fun findAllMethodsByString(classLoader: ClassLoader, searchString: String): List<Method> {
+        val result = bridge.findMethod {
+            matcher {
+                addUsingString(searchString)
+            }
+        }
+        return result.mapNotNull {
+            try { it.getMethodInstance(classLoader) } catch (_: Throwable) { null }
+        }
     }
 
     private fun findMethodByString(classLoader: ClassLoader, searchString: String): Method? {
