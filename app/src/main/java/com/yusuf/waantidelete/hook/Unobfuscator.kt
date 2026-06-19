@@ -97,6 +97,32 @@ object Unobfuscator {
     }
 
     @JvmStatic
+    fun loadMessageKeyField(classLoader: ClassLoader): Field {
+        val fMessageClass = loadFMessageClass(classLoader)
+        val result = bridge.findClass {
+            matcher {
+                fieldCount(3)
+                addMethod {
+                    name("toString")
+                    addUsingString("Key")
+                }
+            }
+        }
+        if (result.isEmpty()) throw RuntimeException("MessageKey class not found")
+
+        for (classData in result) {
+            val keyClass = classData.getInstance(classLoader)
+            for (f in fMessageClass.declaredFields) {
+                if (keyClass.isAssignableFrom(f.type)) {
+                    f.isAccessible = true
+                    return f
+                }
+            }
+        }
+        throw RuntimeException("MessageKey field not found")
+    }
+
+    @JvmStatic
     fun loadViewOnceMethods(classLoader: ClassLoader): Array<Method> {
         val result = bridge.findMethod {
             matcher {
@@ -137,6 +163,7 @@ object Unobfuscator {
         throw RuntimeException("ViewOnce methods not found")
     }
 
+    @JvmStatic
     fun findAllMethodsByString(classLoader: ClassLoader, searchString: String): List<Method> {
         val result = bridge.findMethod {
             matcher {
