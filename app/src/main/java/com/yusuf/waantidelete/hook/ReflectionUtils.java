@@ -43,6 +43,10 @@ public class ReflectionUtils {
         return Arrays.stream(cls.getDeclaredFields()).filter(f -> type == f.getType()).collect(Collectors.toList());
     }
 
+    public static List<Field> getFieldsByExtendType(Class<?> cls, Class<?> type) {
+        return Arrays.stream(cls.getDeclaredFields()).filter(f -> type.isAssignableFrom(f.getType())).collect(Collectors.toList());
+    }
+
     public static Object findArg(Object[] args, Class<?> type) {
         if (args == null || type == null) return null;
         for (Object arg : args) {

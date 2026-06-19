@@ -77,11 +77,11 @@ object Unobfuscator {
 
         for (classData in result) {
             val keyClass = classData.getInstance(classLoader)
-            for (f in fMessageClass.declaredFields) {
-                if (keyClass.isAssignableFrom(f.type)) {
-                    f.isAccessible = true
-                    return f
-                }
+            val fields = ReflectionUtils.getFieldsByExtendType(fMessageClass, keyClass)
+            if (fields.isNotEmpty()) {
+                val field = fields[fields.size - 1]
+                field.isAccessible = true
+                return field
             }
         }
         throw RuntimeException("MessageKey field not found")

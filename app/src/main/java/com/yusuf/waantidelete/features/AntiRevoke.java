@@ -102,7 +102,7 @@ public class AntiRevoke {
                 if (!shouldBlock) return;
 
                 persistRevocation(info);
-                setSuccessfulResult(param, messageMethod.getReturnType());
+                param.setResult(true);
             }
         });
     }
@@ -316,7 +316,7 @@ public class AntiRevoke {
             MessageInfo info = new MessageInfo();
             info.fMessage = fMessageObject;
             info.keyObject = keyObject;
-            info.messageId = (String) XposedHelpers.getObjectField(keyObject, "A01");
+            info.messageId = (String) XposedHelpers.getObjectField(fMessageObject, "A01");
             info.isFromMe = XposedHelpers.getBooleanField(keyObject, "A02");
             info.remoteJid = new JidInfo(XposedHelpers.getObjectField(keyObject, "A00"));
             info.deviceJid = deviceJidField == null ? null : deviceJidField.get(fMessageObject);
